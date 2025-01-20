@@ -10,10 +10,9 @@
     <div
       v-for="item in list"
       :key="item"
-      :class="[selectedMap[item] ? $style.activeItem : $style.item]"
       :data-item="item"
     >
-      {{ item }}
+      <slot :item="item" :isActive="!!selectedMap[item]"></slot>
     </div>
     <div
       v-if="selectionRect"
@@ -29,21 +28,36 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onUnmounted, watch } from "vue";
 import { DOMVector } from "@/data/DOMVector";
 import { isIntersecting, clamp } from "@/utils";
+
+defineProps<{
+  list: any[];
+}>();
+
+const emits = defineEmits<{
+  (e: 'selected', selectedMap: Record<string, boolean>): void
+}>();
 
 const isDragging = ref(false);
 
 const container = ref<HTMLElement | null>(null);
 
-const list = ref(Array.from({ length: 300 }).map((_, i) => i + 1));
-
 const selectedMap = ref<Record<string, boolean>>({});
+
+watch(
+  () => selectedMap.value,
+  () => {
+    emits('selected', selectedMap.value);
+  }
+);
 
 const dragVector = ref<DOMVector | null>(null);
 
 const scrollVector = ref<DOMVector | null>(null);
+
+let handler: number | undefined;
 
 const containerScrollRect = computed(() => {
   if (!container.value) return null;
@@ -63,10 +77,10 @@ const selectionRect = computed(() => {
     .add(scrollVector.value)
     .clamp(
       new DOMRect(
-        0,
-        0,
-        containerScrollRect.value[0],
-        containerScrollRect.value[1]
+        5,
+        5,
+        containerScrollRect.value[0] - 5,
+        containerScrollRect.value[1] - 5
       )
     )
     .toDOMRect();
@@ -123,10 +137,16 @@ const checkShouldAutoScroll = () => {
     ? -1 * clamp(20 - point.y, 0, 15)
     : undefined;
 
+  if (left === undefined && top === undefined) {
+    handler = requestAnimationFrame(checkShouldAutoScroll);
+    return;
+  };
+
   container.value.scrollBy({
     left,
     top,
   });
+  handler = requestAnimationFrame(checkShouldAutoScroll);
 };
 
 const handlePointerDown = (e: PointerEvent) => {
@@ -166,7 +186,11 @@ const handlePointerMove = (e: PointerEvent) => {
   isDragging.value = true;
   dragVector.value = nextVector;
   updateSelection();
-  checkShouldAutoScroll();
+
+  if (handler)
+    cancelAnimationFrame(handler);
+
+  handler = requestAnimationFrame(checkShouldAutoScroll);
 };
 
 const handlePointerUp = () => {
@@ -195,6 +219,9 @@ const handleScroll = (e: Event) => {
   updateSelection();
 };
 
+onUnmounted(() => {
+  if (handler) cancelAnimationFrame(handler);
+});
 </script>
 
 <style lang="less" module>
@@ -207,34 +234,13 @@ const handleScroll = (e: Event) => {
   padding: 20px;
   position: relative;
   user-select: none;
-  max-height: 300px;
+  max-height: 200px;
   overflow: auto;
 
   .selectionRect {
     position: absolute;
     background-color: rgba(0, 0, 0, 0.6);
     border: 2px solid;
-  }
-
-  .activeItem,
-  .item {
-    width: 30px;
-    height: 30px;
-    padding: 5px;
-    text-align: center;
-    line-height: 20px;
-    box-sizing: border-box;
-    color: #333;
-  }
-
-  .item {
-    border: 1px solid;
-    background-color: #eee;
-  }
-
-  .activeItem {
-    background-color: #333;
-    color: #eee;
   }
 }
 </style>
